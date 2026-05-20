@@ -20,7 +20,7 @@ IMG_SIZE = (224, 224)
 CLASS_NAMES = ["Cant be eaten", "Can be eaten"]
 
 # ─── Load Model (once at startup, not per request) ────────────────────────────
-print("Loading model...")
+print("Loading model...") 
 model = tf.keras.models.load_model(MODEL_PATH)
 print(f"Model loaded! Input shape: {model.input_shape}, Output shape: {model.output_shape}")
 
