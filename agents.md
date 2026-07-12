@@ -46,28 +46,60 @@ whole thing. The tabular side does not exist yet.
 
 ## 3. Build plan to close the gap (target: demo-able by July 17)
 
-In priority order — each step should be a separate branch/PR:
+**Decision (confirmed with team lead, no committee dataset was provided for
+this case as of the deadline): we are NOT training a tabular ML model.**
+Reasons:
+- No real or committee-provided lab dataset exists — a model "trained" on
+  fabricated data would report a meaningless accuracy number.
+- A rule-based engine encoding real SNI 2973:2011 thresholds is more
+  honest, fully explainable, and appropriate for a certification/audit
+  context (auditors need to point to *which exact standard* was violated —
+  a black-box model can't do that as convincingly).
+- This is a **showcase-quality prototype**, not a full production app. Goal
+  is a clean, working, honestly-scoped demo — not maximum technical
+  complexity. We can scale to real ML later if the team continues past the
+  competition.
 
-1. **Synthetic tabular dataset** — generate realistic lab data grounded in
-   real SNI 2973:2011 biscuit quality thresholds (moisture %, fat %,
-   protein %, ash, microbial count, heavy metal ppm → pass/fail label).
-   State clearly in the video that this is synthesized for demo purposes.
-2. **Classification model (tabular)** — simple, explainable model (logistic
-   regression or random forest, not a CNN) trained on the dataset above.
-3. **Clustering model** — KMeans on the same features, to group failure
-   types (e.g. "high-moisture cluster" vs "contamination cluster").
-4. **New Flask routes** — `POST /predict-lab` (classification) and
-   `POST /cluster` (clustering), alongside the existing `/predict` (image)
-   route. Do not break `/predict`.
-5. **Predictive Simulator UI** — a form (sliders/number inputs) for each lab
-   parameter, calling `/predict-lab`.
-6. **Dashboard** — charts showing cluster distribution and which parameter
-   is driving failures most.
-7. **Executive Summary** — rule-based / template text generator from model
-   output. No need for an LLM call here — deterministic and explainable is
-   better for a judged demo.
-8. Keep the image classifier as an additional "Visual Inspection" tab in the
+**Confirmed SNI 2973:2011 thresholds (verified via research, not guessed):**
+
+| Parameter | Rule | Confidence |
+|---|---|---|
+| Moisture | fail if > 5% | High |
+| Protein | fail if < 5% | High |
+| Ash | fail if > 1% | Medium |
+| Fat, microbial count, heavy metals | placeholder thresholds, clearly labeled as such in UI/code | Low — real BSN document not freely accessible; swap in real numbers if committee data appears later |
+
+Build order, each step a separate branch/PR:
+
+1. **Rule engine (backend)** — a config-driven set of threshold checks
+   (`if moisture > 5: fail("too wet")`, etc.) exposed via a new
+   `POST /predict-lab` route. Input: JSON of lab parameters. Output:
+   overall pass/fail + list of which parameter(s) failed and why.
+2. **Failure-category tagging** — group failed parameters into categories
+   (moisture-related, protein-related, contamination-related) so the
+   dashboard has something structured to visualize. This satisfies the
+   proposal's "clustering/pattern mapping" promise without needing real ML
+   — it's rule-based grouping, and we say so honestly in the video.
+3. **Predictive Simulator UI** — a form (number inputs, one per lab
+   parameter) calling `/predict-lab`, showing pass/fail + reasons instantly.
+4. **Dashboard** — simple visualization of failure categories (e.g. a small
+   bar/donut chart of which parameter type is failing most across sample
+   submissions).
+5. **Executive Summary** — template-based text generator built from the
+   rule engine's output (e.g. "Sample failed due to excess moisture
+   (6.2% > 5% limit), consistent with high-moisture failure pattern...").
+6. **UI/UX enhancement pass** — improve the existing prototype's visual
+   design based on Figma reference:
+   https://www.figma.com/site/AAmxUTRZiU28wxjGpX2xIG/Untitled
+   (Claude needs edit access or exported screenshots to read this file —
+   ask whoever owns it to share, or export frames as images.)
+7. Keep the image classifier as an additional "Visual Inspection" tab in the
    UI, not the centerpiece.
+
+**Explicitly out of scope for the demo:** training any model on tabular
+data, real-time continuous learning, real lab instrument integration,
+multi-tenant SaaS auth/billing. These are fine to describe as "future work"
+in the video, but are not being built now.
 
 ## 4. Tech stack
 
@@ -102,13 +134,12 @@ Open `frontend/index.html` directly in a browser (it points at
 
 | Task | Owner | Status |
 |---|---|---|
-| Synthetic dataset | — | not started |
-| Tabular classification model | — | not started |
-| Clustering model | — | not started |
-| `/predict-lab` + `/cluster` routes | — | not started |
+| Rule engine + `/predict-lab` route | — | not started |
+| Failure-category tagging logic | — | not started |
 | Predictive Simulator UI | — | not started |
 | Dashboard | — | not started |
 | Executive Summary generator | — | not started |
+| UI/UX polish pass (Figma reference) | — | not started |
 | Demo video script/recording | — | not started |
 
 - Commit messages: short, present tense (`add clustering route`, not
@@ -118,10 +149,13 @@ Open `frontend/index.html` directly in a browser (it points at
 
 ## 7. Open questions for the team
 
-- Does anyone have access to real (even partial/anonymized) lab test data,
-  or are we fully committed to synthetic data for the demo?
+- ~~Does anyone have access to real lab test data?~~ **Resolved: no
+  committee dataset provided — going rule-based, see Section 3.**
 - Frontend: stay plain HTML/JS, or move to a framework for the dashboard
   (charts are easier with something like Chart.js even in plain JS — may not
   need a framework switch at all)?
+- Who has edit access to the Figma design file, and can they export the
+  relevant frames as PNGs so the whole team (and AI assistants helping out)
+  can actually see the intended design?
 - Who is recording/scripting the demo video, and by what internal date
   (leave buffer before July 17)?
