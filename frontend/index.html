@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Biscuit Classifier</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <p class="eyebrow">AI Classification</p>
+    <h1>Biscuit<br><span>Identifier</span></h1>
+  </header>
+
+  <div class="card">
+
+    <!-- Drop Zone -->
+    <div id="drop-zone">
+      <input type="file" id="file-input" accept="image/*" />
+      <span class="drop-icon">🍪</span>
+      <p class="drop-label">
+        <strong>Click to upload</strong> or drag & drop<br>
+        PNG, JPG, WEBP supported
+      </p>
+    </div>
+
+    <!-- Image Preview -->
+    <div id="preview-section">
+      <img id="preview-img" src="" alt="Preview" />
+      <div class="preview-meta">
+        <span id="file-name">—</span>
+        <span id="file-size">—</span>
+      </div>
+    </div>
+
+    <!-- Predict Button -->
+    <button id="predict-btn" disabled>Classify Biscuit</button>
+
+    <!-- Error Box -->
+    <div id="error-box"></div>
+
+    <!-- Result -->
+    <div id="result-section">
+      <p class="result-label">Predicted Class</p>
+      <p class="result-class" id="result-class">—</p>
+
+      <div class="confidence-row">
+        <span class="confidence-title">Confidence</span>
+        <span class="confidence-pct" id="confidence-pct">—</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" id="bar-fill"></div>
+      </div>
+
+      <p class="raw-output" id="raw-output"></p>
+    </div>
+
+  </div>
+
+  <footer>
+    Connected to <a href="http://localhost:5000/health" target="_blank">localhost:5000</a>
+    &nbsp;·&nbsp; MobileNetV2 backend
+  </footer>
+
+</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────────
+  const API_URL = "http://localhost:5000/predict";
+
+  // ── DOM refs ────────────────────────────────────────────────────────────────
+  const dropZone     = document.getElementById("drop-zone");
+  const fileInput    = document.getElementById("file-input");
+  const previewSec   = document.getElementById("preview-section");
+  const previewImg   = document.getElementById("preview-img");
+  const fileName     = document.getElementById("file-name");
+  const fileSize     = document.getElementById("file-size");
+  const predictBtn   = document.getElementById("predict-btn");
+  const resultSec    = document.getElementById("result-section");
+  const resultClass  = document.getElementById("result-class");
+  const confidencePct= document.getElementById("confidence-pct");
+  const barFill      = document.getElementById("bar-fill");
+  const rawOutput    = document.getElementById("raw-output");
+  const errorBox     = document.getElementById("error-box");
+
+  let selectedFile = null;
+
+  // ── Drag & Drop ─────────────────────────────────────────────────────────────
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+  });
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+  });
+
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+
+  // ── Handle selected file ────────────────────────────────────────────────────
+  function handleFile(file) {
+    selectedFile = file;
+
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      previewImg.src = e.target.result;
+      previewSec.classList.add("visible");
+    };
+    reader.readAsDataURL(file);
+
+    // Show file meta
+    fileName.textContent = file.name;
+    fileSize.textContent = formatBytes(file.size);
+
+    // Enable button, hide old results/errors
+    predictBtn.disabled = false;
+    resultSec.classList.remove("visible");
+    hideError();
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+  }
+
+  // ── Predict ─────────────────────────────────────────────────────────────────
+  predictBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    // Loading state
+    predictBtn.disabled = true;
+    predictBtn.innerHTML = '<span class="spinner"></span>Classifying...';
+    resultSec.classList.remove("visible");
+    hideError();
+
+    const formData = new FormData();
+    formData.append("image", selectedFile);
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: formData
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+
+      const data = await res.json();
+      showResult(data);
+
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      predictBtn.disabled = false;
+      predictBtn.textContent = "Classify Biscuit";
+    }
+  });
+
+  // ── Show Result ─────────────────────────────────────────────────────────────
+  function showResult(data) {
+    resultClass.textContent  = data.predicted_class;
+    confidencePct.textContent = data.confidence + "%";
+    rawOutput.textContent    = `raw sigmoid output: ${data.raw_output}`;
+
+    // Animate bar
+    barFill.style.width = "0%";
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        barFill.style.width = data.confidence + "%";
+      });
+    });
+
+    resultSec.classList.add("visible");
+  }
+
+  // ── Error ────────────────────────────────────────────────────────────────────
+  function showError(msg) {
+    errorBox.textContent = "⚠ " + msg;
+    errorBox.classList.add("visible");
+  }
+
+  function hideError() {
+    errorBox.classList.remove("visible");
+  }
+</script>
+
+</body>
+</html>
