@@ -1,1 +1,10 @@
 /models
+
+# Python virtual environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Note: uv.lock is intentionally NOT ignored — commit it so everyone
+# gets the same dependency versions.

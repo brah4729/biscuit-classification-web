@@ -75,26 +75,40 @@ Build order, each step a separate branch/PR:
    (`if moisture > 5: fail("too wet")`, etc.) exposed via a new
    `POST /predict-lab` route. Input: JSON of lab parameters. Output:
    overall pass/fail + list of which parameter(s) failed and why.
+   **STATUS: DONE.** See `backend/rules.py`, `backend/summary.py`,
+   `backend/app.py` (`/predict-lab`, `/thresholds` routes).
 2. **Failure-category tagging** — group failed parameters into categories
    (moisture-related, protein-related, contamination-related) so the
    dashboard has something structured to visualize. This satisfies the
    proposal's "clustering/pattern mapping" promise without needing real ML
    — it's rule-based grouping, and we say so honestly in the video.
+   **STATUS: DONE.** Built into `rules.py`'s `category` field per parameter.
 3. **Predictive Simulator UI** — a form (number inputs, one per lab
    parameter) calling `/predict-lab`, showing pass/fail + reasons instantly.
+   **STATUS: DONE.** See `frontend/index.html`, "Lab Simulator" tab. Form
+   fields are generated dynamically from `GET /thresholds` — adding a new
+   parameter in `rules.py` updates the UI automatically, no HTML changes
+   needed.
 4. **Dashboard** — simple visualization of failure categories (e.g. a small
    bar/donut chart of which parameter type is failing most across sample
-   submissions).
+   submissions). **STATUS: partially done** — current UI shows category
+   chips per single result. A cross-sample aggregate chart (multiple
+   submissions over time) is not built yet.
 5. **Executive Summary** — template-based text generator built from the
-   rule engine's output (e.g. "Sample failed due to excess moisture
-   (6.2% > 5% limit), consistent with high-moisture failure pattern...").
-6. **UI/UX enhancement pass** — improve the existing prototype's visual
-   design based on Figma reference:
-   https://www.figma.com/site/AAmxUTRZiU28wxjGpX2xIG/Untitled
-   (Claude needs edit access or exported screenshots to read this file —
-   ask whoever owns it to share, or export frames as images.)
+   rule engine's output. **STATUS: DONE.** See `backend/summary.py`,
+   rendered in the UI under "Executive Summary".
+6. **UI/UX enhancement pass** — visual design based on the team's Figma
+   mockups (`biskuit-sukses.png` pass state, `biskuit-gagal.png` fail
+   state). **STATUS: DONE** — TÜV NORD-style corporate blue palette
+   (`#004b8d`), Space Grotesk + JetBrains Mono, pass (green) / fail (red)
+   result banners matching the mockups. Full original Figma file
+   (https://www.figma.com/site/AAmxUTRZiU28wxjGpX2xIG/Untitled) was not
+   directly viewable (no edit access) — built from exported PNGs instead.
+   If anyone gets edit access, worth a follow-up pass to catch details the
+   PNGs didn't show.
 7. Keep the image classifier as an additional "Visual Inspection" tab in the
-   UI, not the centerpiece.
+   UI, not the centerpiece. **STATUS: DONE** — second tab in
+   `frontend/index.html`, calls the original `/predict` route.
 
 **Explicitly out of scope for the demo:** training any model on tabular
 data, real-time continuous learning, real lab instrument integration,
@@ -103,11 +117,11 @@ in the video, but are not being built now.
 
 ## 4. Tech stack
 
-- Backend: Flask + flask-cors, TensorFlow/Keras (image model), scikit-learn
-  (tabular models — to be added)
-- Frontend: currently plain HTML/CSS/JS (`frontend/index.html`). Team can
-  decide whether to keep it plain or move to a framework — no framework
-  chosen yet, discuss before switching mid-sprint.
+- Backend: Flask + flask-cors, TensorFlow/Keras (image model), plain Python
+  (rule engine — no ML library needed for the lab-parameter side)
+- Frontend: plain HTML/CSS/JS, single file (`frontend/index.html`). No
+  framework — form is generated dynamically via JS from the backend's
+  `/thresholds` endpoint, so a framework wasn't needed for this scope.
 - Model storage: large model files go in **GitHub Releases**, never
   committed directly to git history.
 
@@ -119,9 +133,17 @@ pip install -r requirements.txt
 python app.py          # runs on http://localhost:5000
 ```
 
-Open `frontend/index.html` directly in a browser (it points at
-`http://localhost:5000/predict` by default — update `API_URL` in the
-`<script>` block if your backend runs elsewhere).
+Open `frontend/index.html` directly in a browser. It talks to
+`http://localhost:5000` by default — update the `API_URL` constant near the
+top of the `<script>` block in `index.html` if your backend runs elsewhere.
+
+Quick manual test of the lab engine without the UI:
+
+```bash
+curl -X POST http://localhost:5000/predict-lab \
+  -H "Content-Type: application/json" \
+  -d '{"moisture": 6.2, "protein": 6.0, "ash": 0.8}'
+```
 
 ## 6. Team conventions
 
@@ -134,12 +156,13 @@ Open `frontend/index.html` directly in a browser (it points at
 
 | Task | Owner | Status |
 |---|---|---|
-| Rule engine + `/predict-lab` route | — | not started |
-| Failure-category tagging logic | — | not started |
-| Predictive Simulator UI | — | not started |
-| Dashboard | — | not started |
-| Executive Summary generator | — | not started |
-| UI/UX polish pass (Figma reference) | — | not started |
+| Rule engine + `/predict-lab` route | — | done |
+| Failure-category tagging logic | — | done |
+| Predictive Simulator UI | — | done |
+| Dashboard (single-result view) | — | done |
+| Dashboard (cross-sample aggregate view) | — | not started |
+| Executive Summary generator | — | done |
+| UI/UX polish pass (Figma reference) | — | done, may need refinement with full Figma access |
 | Demo video script/recording | — | not started |
 
 - Commit messages: short, present tense (`add clustering route`, not
@@ -151,11 +174,12 @@ Open `frontend/index.html` directly in a browser (it points at
 
 - ~~Does anyone have access to real lab test data?~~ **Resolved: no
   committee dataset provided — going rule-based, see Section 3.**
-- Frontend: stay plain HTML/JS, or move to a framework for the dashboard
-  (charts are easier with something like Chart.js even in plain JS — may not
-  need a framework switch at all)?
-- Who has edit access to the Figma design file, and can they export the
-  relevant frames as PNGs so the whole team (and AI assistants helping out)
-  can actually see the intended design?
+- Frontend: stay plain HTML/JS, or move to a framework? **Leaning toward
+  staying plain** — current scope didn't need one; revisit only if the
+  cross-sample dashboard needs heavier charting than a simple library
+  (e.g. Chart.js) can handle in plain JS.
+- Who has edit access to the Figma design file, and can they export any
+  additional frames as PNGs so the current build can be double-checked
+  against the full design intent?
 - Who is recording/scripting the demo video, and by what internal date
   (leave buffer before July 17)?

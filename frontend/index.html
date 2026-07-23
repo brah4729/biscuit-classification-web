@@ -1,207 +1,465 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Biscuit Classifier</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  
+<meta charset="UTF-8" />
+<title>SPL Biscuit Testing — Acknowledge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /*
+    Desktop-only by design — no media queries, no responsive breakpoints.
+    This matches the Figma mockups exactly, which were built as a fixed-width
+    dashboard, not a responsive site. Do not "fix" this by adding responsive
+    rules unless the team explicitly decides to support mobile later.
+  */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #eef1fb;
+    --surface:     #ffffff;
+    --border:      #dde3f0;
+    --ink:         #10182b;
+    --muted:       #6b7690;
+    --navy:        #0C2AD5;      /* dark blue navbar, per Figma */
+    --navy-light:  #16295c;
+    --blue-accent: #2447d6;
+    --blue-dim:    #e8ecfb;
+    --pass:        #1fa15c;
+    --pass-bg:     #e6f7ee;
+    --fail:        #e0392f;
+    --fail-bg:     #fdeceb;
+    --warn:        #d98c11;
+    --warn-bg:     #fdf3e2;
+    --radius:      14px;
+  }
+
+  html, body { min-width: 1280px; } /* enforce desktop canvas, no shrink */
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  /* ───────────────────────── Navbar ───────────────────────── */
+  .navbar {
+    background: var(--navy);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.1rem 2.5rem;
+  }
+  .navbar .brand { display: flex; align-items: center; gap: 0.9rem; font-weight: 700; font-size: 1.15rem; }
+  .navbar .brand .tuv { letter-spacing: -0.02em; }
+  .navbar .brand .tuv span { color: #8fb2ff; } /* "NORD" slightly lighter, TUVNORD wordmark style */
+  .navbar .brand .divider { width: 2px; height: 22px; background: rgba(255,255,255,0.3); }
+  .navbar .brand .title { font-weight: 500; font-size: 1rem; color: #d7e0ff; }
+  .navbar .csv-btn {
+    background: white; color: var(--navy); border: none; padding: 0.6rem 1.2rem;
+    border-radius: 8px; font-family: inherit; font-weight: 700; font-size: 0.82rem; cursor: pointer;
+  }
+  .navbar .csv-btn:hover { opacity: 0.9; }
+  .navbar .csv-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ───────────────────────── Layout shell ───────────────────────── */
+  .shell { max-width: 1240px; margin: 0 auto; padding: 2.25rem 2.5rem 4rem; }
+
+  .tabs { display: flex; gap: 0.6rem; margin-bottom: 1.75rem; width: 420px; }
+  .tab {
+    flex: 1; text-align: center; padding: 0.7rem 1rem; border-radius: 9px; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .tab.active { background: var(--navy); color: white; border-color: var(--navy); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ───────────────────────── Two-column dashboard grid ───────────────────────── */
+  .grid-2col { display: grid; grid-template-columns: 460px 1fr; gap: 1.5rem; align-items: stretch; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1.6rem;
+  }
+  .card h2 {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); margin-bottom: 1.1rem;
+  }
+
+  /* ---- Left card: image / form ---- */
+  .dropzone {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 1.4rem; text-align: center;
+    cursor: pointer; background: #fbfcfe;
+    min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--blue-accent); background: var(--blue-dim); }
+  .dropzone p { font-size: 0.82rem; color: var(--muted); }
+  .dropzone input { display: none; }
+  #imgPreview {
+    max-width: 100%; max-height: 260px; object-fit: contain;
+    border-radius: 8px; margin-top: 0.9rem; display: none;
+  }
+
+  .field-list { display: flex; flex-direction: column; gap: 0.85rem; }
+  .field label {
+    display: block; font-size: 0.72rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.35rem;
+  }
+  .field .unit { font-family: 'JetBrains Mono', monospace; font-weight: 400; text-transform: none; }
+  .field input {
+    width: 100%; padding: 0.6rem 0.75rem; border-radius: 7px; border: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; background: #fbfcfe; color: var(--ink);
+  }
+  .field input:focus { outline: none; border-color: var(--blue-accent); background: white; }
+
+  button.run {
+    margin-top: 1.3rem; width: 100%; padding: 0.8rem; border: none; border-radius: 9px;
+    background: var(--navy); color: white; font-family: inherit; font-weight: 700; font-size: 0.87rem;
+    cursor: pointer;
+  }
+  button.run:hover { opacity: 0.92; }
+  button.run:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ---- Right card: checklist ---- */
+  .checklist { list-style: none; display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.5rem; }
+  .checklist li {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.75rem 0.9rem; border-radius: 8px; font-size: 0.86rem;
+  }
+  .checklist li.ok    { background: var(--pass-bg); }
+  .checklist li.bad   { background: var(--fail-bg); }
+  .checklist li.warn  { background: var(--warn-bg); }
+  .checklist .param-name { display: flex; align-items: center; gap: 0.6rem; font-weight: 600; }
+  .checklist .param-value { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--muted); }
+  .checklist .status-icon {
+    width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; color: white; flex-shrink: 0;
+  }
+  .checklist li.ok .status-icon { background: var(--pass); }
+  .checklist li.bad .status-icon { background: var(--fail); }
+  .checklist li.warn .status-icon { background: var(--warn); }
+
+  .bullet-list { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
+  .bullet-list li { font-size: 0.9rem; padding-left: 1.1rem; position: relative; }
+  .bullet-list li::before { content: "•"; position: absolute; left: 0; color: var(--blue-accent); font-weight: 700; }
+
+  .empty-state { font-size: 0.85rem; color: var(--muted); padding: 1rem 0; }
+
+  /* ───────────────────────── Bottom result banner ───────────────────────── */
+  .result-banner {
+    display: none; align-items: center; justify-content: space-between; gap: 1rem;
+    margin-top: 1.25rem; padding: 1.1rem 1.4rem; border-radius: 12px; background: var(--navy); color: white;
+  }
+  .result-banner.show { display: flex; }
+  .result-banner .left { display: flex; align-items: center; gap: 0.9rem; }
+  .result-banner .icon {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: white;
+  }
+  .result-banner.pass .icon { background: var(--pass); }
+  .result-banner.fail .icon { background: var(--fail); }
+  .result-banner .label { font-size: 0.95rem; font-weight: 700; }
+  .result-banner .sub { font-size: 0.78rem; color: #c6cfe8; margin-top: 0.15rem; }
+  .result-banner .detail-btn {
+    background: var(--blue-accent); color: white; border: none; padding: 0.55rem 1.1rem;
+    border-radius: 8px; font-family: inherit; font-weight: 600; font-size: 0.78rem; cursor: pointer; flex-shrink: 0;
+  }
+
+  .detail-box {
+    display: none; margin-top: 0.9rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.1rem 1.3rem; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;
+  }
+  .detail-box.show { display: block; }
+</style>
 </head>
 <body>
 
-<div class="container">
+  <nav class="navbar">
+    <div class="brand">
+      <span class="tuv">TUV<span>NORD</span></span>
+      <div class="divider"></div>
+      <span class="title">Biscuit Quality Testing</span>
+    </div>
+    <button class="csv-btn" id="csvBtn" disabled>Download CSV</button>
+  </nav>
 
-  <header>
-    <p class="eyebrow">AI Classification</p>
-    <h1>Biscuit<br><span>Identifier</span></h1>
-  </header>
+  <div class="shell">
 
-  <div class="card">
-
-    <!-- Drop Zone -->
-    <div id="drop-zone">
-      <input type="file" id="file-input" accept="image/*" />
-      <span class="drop-icon">🍪</span>
-      <p class="drop-label">
-        <strong>Click to upload</strong> or drag & drop<br>
-        PNG, JPG, WEBP supported
-      </p>
+    <div class="tabs">
+      <div class="tab active" data-tab="lab">Lab Simulator</div>
+      <div class="tab" data-tab="visual">Visual Inspection</div>
     </div>
 
-    <!-- Image Preview -->
-    <div id="preview-section">
-      <img id="preview-img" src="" alt="Preview" />
-      <div class="preview-meta">
-        <span id="file-name">—</span>
-        <span id="file-size">—</span>
+    <!-- ===================== LAB SIMULATOR PANEL ===================== -->
+    <div class="panel active" id="panel-lab">
+      <div class="grid-2col">
+        <div class="card">
+          <h2>Predictive Simulator — Input</h2>
+          <div class="field-list" id="fieldGrid"><!-- built from GET /thresholds --></div>
+          <button class="run" id="runBtn">Run SPL Check</button>
+        </div>
+
+        <div class="card">
+          <h2>Laboratory Parameter Checklist</h2>
+          <ul class="checklist" id="checklist"></ul>
+          <p class="empty-state" id="checklistEmpty">Enter values on the left and run the check to see results here.</p>
+        </div>
       </div>
+
+      <div class="result-banner" id="resultBanner">
+        <div class="left">
+          <div class="icon" id="resultIcon">✓</div>
+          <div>
+            <div class="label" id="resultLabel">PASSED</div>
+            <div class="sub" id="resultSub">This batch succeeded SPL Testing</div>
+          </div>
+        </div>
+        <button class="detail-btn" id="detailBtn">View Detail</button>
+      </div>
+      <div class="detail-box" id="detailBox"></div>
     </div>
 
-    <!-- Predict Button -->
-    <button id="predict-btn" disabled>Classify Biscuit</button>
+    <!-- ===================== VISUAL INSPECTION PANEL ===================== -->
+    <div class="panel" id="panel-visual">
+      <div class="grid-2col">
+        <div class="card">
+          <h2>Visual Inspection of Cookie</h2>
+          <label class="dropzone" id="dropzone">
+            <p id="dzText">Click or drag an image here</p>
+            <img id="imgPreview" alt="preview" />
+            <input type="file" id="fileInput" accept="image/*" />
+          </label>
+          <button class="run" id="classifyBtn">Classify Image</button>
+        </div>
 
-    <!-- Error Box -->
-    <div id="error-box"></div>
-
-    <!-- Result -->
-    <div id="result-section">
-      <p class="result-label">Predicted Class</p>
-      <p class="result-class" id="result-class">—</p>
-
-      <div class="confidence-row">
-        <span class="confidence-title">Confidence</span>
-        <span class="confidence-pct" id="confidence-pct">—</span>
+        <div class="card" style="display: flex; flex-direction: column; justify-content: center;">
+          <h2 id="visualCardTitle" style="align-self: flex-start;">This Cookie Is</h2>
+          <ul class="bullet-list" id="visualBullets"></ul>
+          <p class="empty-state" id="visualEmpty">Upload a photo and classify it to see results here.</p>
+        </div>
       </div>
-      <div class="bar-track">
-        <div class="bar-fill" id="bar-fill"></div>
-      </div>
 
-      <p class="raw-output" id="raw-output"></p>
+      <div class="result-banner" id="visualBanner">
+        <div class="left">
+          <div class="icon" id="visualIcon">✓</div>
+          <div>
+            <div class="label" id="visualLabel">—</div>
+            <div class="sub" id="visualSub">—</div>
+          </div>
+        </div>
+      </div>
     </div>
 
   </div>
 
-  <footer>
-    Connected to <a href="http://localhost:5000/health" target="_blank">localhost:5000</a>
-    &nbsp;·&nbsp; MobileNetV2 backend
-  </footer>
-
-</div>
-
 <script>
-  // ── Config ──────────────────────────────────────────────────────────────────
-  const API_URL = "http://localhost:5000/predict";
+  const API_URL = "http://localhost:5000"; // update if backend runs elsewhere
+  let lastLabResult = null; // used for CSV export
 
-  // ── DOM refs ────────────────────────────────────────────────────────────────
-  const dropZone     = document.getElementById("drop-zone");
-  const fileInput    = document.getElementById("file-input");
-  const previewSec   = document.getElementById("preview-section");
-  const previewImg   = document.getElementById("preview-img");
-  const fileName     = document.getElementById("file-name");
-  const fileSize     = document.getElementById("file-size");
-  const predictBtn   = document.getElementById("predict-btn");
-  const resultSec    = document.getElementById("result-section");
-  const resultClass  = document.getElementById("result-class");
-  const confidencePct= document.getElementById("confidence-pct");
-  const barFill      = document.getElementById("bar-fill");
-  const rawOutput    = document.getElementById("raw-output");
-  const errorBox     = document.getElementById("error-box");
+  // ---------- Tabs ----------
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
+    });
+  });
 
+  // ---------- Build the lab parameter form from /thresholds ----------
+  async function buildForm() {
+    const grid = document.getElementById("fieldGrid");
+    try {
+      const res = await fetch(`${API_URL}/thresholds`);
+      const thresholds = await res.json();
+      window.__thresholds = thresholds; // stash for checklist rendering later
+      grid.innerHTML = "";
+      Object.entries(thresholds).forEach(([key, rule]) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "field";
+        const cmpWord = rule.comparison === "max" ? "max" : "min";
+        wrapper.innerHTML = `
+          <label>${key.replace(/_/g, " ")} <span class="unit">(${cmpWord} ${rule.limit}${rule.unit})</span></label>
+          <input type="number" step="any" data-param="${key}" placeholder="e.g. ${rule.limit}" />
+        `;
+        grid.appendChild(wrapper);
+      });
+    } catch (e) {
+      grid.innerHTML = `<p class="empty-state">Could not reach backend at ${API_URL}. Is app.py running?</p>`;
+    }
+  }
+  buildForm();
+
+  // ---------- Run SPL check ----------
+  document.getElementById("runBtn").addEventListener("click", async () => {
+    const inputs = document.querySelectorAll("#fieldGrid input");
+    const payload = {};
+    inputs.forEach(inp => { if (inp.value.trim() !== "") payload[inp.dataset.param] = parseFloat(inp.value); });
+
+    if (Object.keys(payload).length === 0) { alert("Enter at least one lab value first."); return; }
+
+    const btn = document.getElementById("runBtn");
+    btn.disabled = true; btn.textContent = "Checking...";
+
+    try {
+      const res = await fetch(`${API_URL}/predict-lab`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      lastLabResult = data;
+      document.getElementById("csvBtn").disabled = false;
+      renderChecklist(data);
+      renderBanner(data);
+    } catch (e) {
+      alert("Request failed — check that the backend is running at " + API_URL);
+    } finally {
+      btn.disabled = false; btn.textContent = "Run SPL Check";
+    }
+  });
+
+  // Build the ✔ / ✘ checklist for every parameter that was submitted —
+  // not just the failures. Passing parameters need a value on screen too
+  // (matches the "Laboratory Parameter Checklist" reference mockup, which
+  // shows OK items alongside HIGH/WARN items).
+  function renderChecklist(data) {
+    const list = document.getElementById("checklist");
+    const empty = document.getElementById("checklistEmpty");
+    const failedParams = new Set(data.failures.map(f => f.parameter));
+    const failMap = Object.fromEntries(data.failures.map(f => [f.parameter, f]));
+
+    const items = Object.entries(data.input).map(([param, value]) => {
+      const rule = window.__thresholds[param];
+      if (!rule) return "";
+      const failed = failedParams.has(param);
+      const cls = failed ? "bad" : "ok";
+      const icon = failed ? "✕" : "✔";
+      const statusWord = failed ? (failMap[param].category.includes("Contamination") ? "WARN" : "HIGH/LOW") : "OK";
+      return `
+        <li class="${cls}">
+          <span class="param-name"><span class="status-icon">${icon}</span>${param.replace(/_/g, " ")}</span>
+          <span class="param-value">${value}${rule.unit} (${statusWord})</span>
+        </li>`;
+    }).join("");
+
+    list.innerHTML = items;
+    empty.style.display = items ? "none" : "block";
+  }
+
+  function renderBanner(data) {
+    const banner = document.getElementById("resultBanner");
+    const icon = document.getElementById("resultIcon");
+    const label = document.getElementById("resultLabel");
+    const sub = document.getElementById("resultSub");
+    const detailBox = document.getElementById("detailBox");
+
+    banner.classList.add("show");
+    detailBox.classList.remove("show");
+    detailBox.textContent = data.summary;
+
+    if (data.passed) {
+      banner.className = "result-banner show pass";
+      icon.textContent = "✓";
+      label.textContent = "PERFECT! — This batch succeeded SPL Testing";
+      sub.textContent = "Biscuit succeeded the SPL Testing, proceed to the next step";
+    } else {
+      banner.className = "result-banner show fail";
+      icon.textContent = "✕";
+      label.textContent = "WARNING! — This batch failed SPL Testing";
+      sub.textContent = "Check details above, or view the full report below";
+    }
+  }
+
+  document.getElementById("detailBtn").addEventListener("click", () => {
+    document.getElementById("detailBox").classList.toggle("show");
+  });
+
+  // ---------- Download CSV ----------
+  document.getElementById("csvBtn").addEventListener("click", () => {
+    if (!lastLabResult) return;
+    const rows = [["parameter", "value", "unit", "status", "category"]];
+    Object.entries(lastLabResult.input).forEach(([param, value]) => {
+      const rule = window.__thresholds[param];
+      const fail = lastLabResult.failures.find(f => f.parameter === param);
+      rows.push([param, value, rule ? rule.unit : "", fail ? "FAIL" : "OK", fail ? fail.category : "-"]);
+    });
+    rows.push([]);
+    rows.push(["overall_result", lastLabResult.passed ? "PASS" : "FAIL"]);
+
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "spl_biscuit_result.csv";
+    a.click();
+  });
+
+  // ---------- Visual inspection (existing image classifier) ----------
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const imgPreview = document.getElementById("imgPreview");
+  const dzText = document.getElementById("dzText");
   let selectedFile = null;
 
-  // ── Drag & Drop ─────────────────────────────────────────────────────────────
-  dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("dragover");
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault(); dropzone.classList.remove("dragover");
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
   });
+  fileInput.addEventListener("change", () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
 
-  dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
-  });
-
-  dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("dragover");
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  });
-
-  fileInput.addEventListener("change", () => {
-    if (fileInput.files[0]) handleFile(fileInput.files[0]);
-  });
-
-  // ── Handle selected file ────────────────────────────────────────────────────
   function handleFile(file) {
     selectedFile = file;
-
-    // Show preview
     const reader = new FileReader();
-    reader.onload = (e) => {
-      previewImg.src = e.target.result;
-      previewSec.classList.add("visible");
-    };
+    reader.onload = e => { imgPreview.src = e.target.result; imgPreview.style.display = "block"; dzText.style.display = "none"; };
     reader.readAsDataURL(file);
-
-    // Show file meta
-    fileName.textContent = file.name;
-    fileSize.textContent = formatBytes(file.size);
-
-    // Enable button, hide old results/errors
-    predictBtn.disabled = false;
-    resultSec.classList.remove("visible");
-    hideError();
   }
 
-  function formatBytes(bytes) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
-  }
+  // NOTE: the model only outputs a binary class + confidence score — it does
+  // NOT detect individual defects like cracks or burning separately. These
+  // bullet points are illustrative UI copy matching the Figma "THIS COOKIE
+  // IS" reference, not real per-defect model outputs. Be careful not to
+  // imply otherwise in the demo video.
+  const PASS_BULLETS = ["Looks Low Moisture", "Cookie not Burnt", "Has no Cracks", "Looks Perfect"];
+  const FAIL_BULLETS = ["Possible High Moisture", "Signs of Uneven Baking", "Visible Surface Irregularity", "Does Not Meet Visual Standard"];
 
-  // ── Predict ─────────────────────────────────────────────────────────────────
-  predictBtn.addEventListener("click", async () => {
-    if (!selectedFile) return;
-
-    // Loading state
-    predictBtn.disabled = true;
-    predictBtn.innerHTML = '<span class="spinner"></span>Classifying...';
-    resultSec.classList.remove("visible");
-    hideError();
+  document.getElementById("classifyBtn").addEventListener("click", async () => {
+    if (!selectedFile) { alert("Choose an image first."); return; }
 
     const formData = new FormData();
     formData.append("image", selectedFile);
 
+    const btn = document.getElementById("classifyBtn");
+    btn.disabled = true; btn.textContent = "Classifying...";
+
     try {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        body: formData
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `Server error ${res.status}`);
-      }
-
+      const res = await fetch(`${API_URL}/predict`, { method: "POST", body: formData });
       const data = await res.json();
-      showResult(data);
+      const isPass = data.predicted_class === "Can be eaten";
 
-    } catch (err) {
-      showError(err.message);
+      const bullets = document.getElementById("visualBullets");
+      const empty = document.getElementById("visualEmpty");
+      bullets.innerHTML = (isPass ? PASS_BULLETS : FAIL_BULLETS).map(b => `<li>${b}</li>`).join("");
+      empty.style.display = "none";
+      document.getElementById("visualCardTitle").textContent = isPass ? "This Cookie Is" : "Good Cookie Sample";
+
+      const banner = document.getElementById("visualBanner");
+      const icon = document.getElementById("visualIcon");
+      const label = document.getElementById("visualLabel");
+      const sub = document.getElementById("visualSub");
+
+      banner.className = "result-banner show " + (isPass ? "pass" : "fail");
+      icon.textContent = isPass ? "✓" : "✕";
+      label.textContent = isPass ? "PERFECT! — This batch succeeded SPL Testing" : "WARNING! — This batch failed SPL Testing";
+      sub.textContent = `Confidence: ${data.confidence}%`;
+    } catch (e) {
+      alert("Request failed — check that the backend is running at " + API_URL);
     } finally {
-      predictBtn.disabled = false;
-      predictBtn.textContent = "Classify Biscuit";
+      btn.disabled = false; btn.textContent = "Classify Image";
     }
   });
-
-  // ── Show Result ─────────────────────────────────────────────────────────────
-  function showResult(data) {
-    resultClass.textContent  = data.predicted_class;
-    confidencePct.textContent = data.confidence + "%";
-    rawOutput.textContent    = `raw sigmoid output: ${data.raw_output}`;
-
-    // Animate bar
-    barFill.style.width = "0%";
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        barFill.style.width = data.confidence + "%";
-      });
-    });
-
-    resultSec.classList.add("visible");
-  }
-
-  // ── Error ────────────────────────────────────────────────────────────────────
-  function showError(msg) {
-    errorBox.textContent = "⚠ " + msg;
-    errorBox.classList.add("visible");
-  }
-
-  function hideError() {
-    errorBox.classList.remove("visible");
-  }
 </script>
-
 </body>
 </html>

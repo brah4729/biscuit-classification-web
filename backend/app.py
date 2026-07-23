@@ -6,6 +6,9 @@ from PIL import Image
 import tensorflow as tf
 import io
 
+from rules import evaluate_sample, THRESHOLDS
+from summary import generate_summary
+
 # ─── App Setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)  # Allow requests from your frontend
@@ -20,7 +23,7 @@ IMG_SIZE = (224, 224)
 CLASS_NAMES = ["Cant be eaten", "Can be eaten"]
 
 # ─── Load Model (once at startup, not per request) ────────────────────────────
-print("Loading model...") 
+print("Loading model...")
 model = tf.keras.models.load_model(MODEL_PATH)
 print(f"Model loaded! Input shape: {model.input_shape}, Output shape: {model.output_shape}")
 
@@ -54,8 +57,10 @@ def index():
     return jsonify({
         "message": "Biscuit Classification API",
         "endpoints": {
-            "POST /predict": "Upload an image to classify",
-            "GET  /health":  "Check if the API is running"
+            "POST /predict":      "Upload an image to classify (visual inspection)",
+            "POST /predict-lab":  "Send lab parameter values (JSON) to check against SNI 2973:2011 thresholds",
+            "GET  /thresholds":   "List all lab parameters this API knows how to evaluate, with their limits",
+            "GET  /health":       "Check if the API is running"
         }
     })
 
@@ -108,6 +113,56 @@ def predict():
         "predicted_class": predicted_class,
         "confidence": round(class_confidence * 100, 2),  # e.g. 87.43
         "raw_output": round(confidence, 6)               # raw sigmoid value, useful for debugging
+    })
+
+
+@app.route("/thresholds", methods=["GET"])
+def thresholds():
+    """
+    Lets the frontend build the Predictive Simulator form dynamically
+    instead of hardcoding parameter names/limits in HTML. If you add a new
+    parameter to rules.THRESHOLDS later, the form updates automatically —
+    no frontend code changes needed.
+    """
+    return jsonify(THRESHOLDS)
+
+
+@app.route("/predict-lab", methods=["POST"])
+def predict_lab():
+    """
+    Rule-based lab quality check (the "Predictive Simulator" backend).
+
+    Expects JSON body, e.g.:
+        {"moisture": 6.2, "protein": 6.0, "ash": 0.8}
+
+    You don't need to send every parameter — only the ones you want
+    evaluated. This lets a user test "what if just moisture changes?"
+    without filling in every field.
+    """
+    data = request.get_json(silent=True)
+
+    if data is None:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    if not isinstance(data, dict) or len(data) == 0:
+        return jsonify({"error": "Send at least one lab parameter, e.g. {\"moisture\": 6.2}"}), 400
+
+    # Validate every value is actually a number before we do math on it —
+    # otherwise a stray string like "6.2%" would crash the comparison
+    # inside evaluate_sample() instead of returning a clean error.
+    for key, value in data.items():
+        if not isinstance(value, (int, float)):
+            return jsonify({"error": f"'{key}' must be a number, got: {value!r}"}), 400
+
+    result = evaluate_sample(data)
+    summary_text = generate_summary(data, result)
+
+    return jsonify({
+        "input": data,
+        "passed": result["passed"],
+        "failures": result["failures"],
+        "failure_categories": result["failure_categories"],
+        "summary": summary_text,
     })
 
 
