@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from PIL import Image
 import tensorflow as tf
@@ -8,6 +8,9 @@ import io
 
 from rules import evaluate_sample, THRESHOLDS
 from summary import generate_summary
+from synthetic_data import generate_synthetic_batch
+from clustering import cluster_failures
+from export import result_to_xlsx_bytes, result_to_csv_bytes
 
 # ─── App Setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -17,9 +20,6 @@ CORS(app)  # Allow requests from your frontend
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "best_biscuit_model.keras")
 IMG_SIZE = (224, 224)
 
-# TODO: Replace these with your actual class names!
-# Since your model has output shape (1,) it's BINARY classification.
-# Class 0 = below 0.5 threshold, Class 1 = above 0.5 threshold
 CLASS_NAMES = ["Cant be eaten", "Can be eaten"]
 
 # ─── Load Model (once at startup, not per request) ────────────────────────────
@@ -30,23 +30,11 @@ print(f"Model loaded! Input shape: {model.input_shape}, Output shape: {model.out
 
 # ─── Helper: Preprocess Image ─────────────────────────────────────────────────
 def preprocess_image(image_bytes: bytes) -> np.ndarray:
-    """
-    Takes raw image bytes, returns a preprocessed numpy array
-    ready to be fed into the model.
-
-    Steps:
-    1. Open image from bytes
-    2. Convert to RGB (handles RGBA, grayscale, etc.)
-    3. Resize to 224x224
-    4. Convert to numpy array
-    5. Apply MobileNetV2 preprocessing (scales pixels to [-1, 1])
-    6. Add batch dimension: shape becomes (1, 224, 224, 3)
-    """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = img.resize(IMG_SIZE)
     img_array = np.array(img, dtype=np.float32)
     img_array = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-    img_array = np.expand_dims(img_array, axis=0)  # (224,224,3) -> (1,224,224,3)
+    img_array = np.expand_dims(img_array, axis=0)
     return img_array
 
 
@@ -60,6 +48,8 @@ def index():
             "POST /predict":      "Upload an image to classify (visual inspection)",
             "POST /predict-lab":  "Send lab parameter values (JSON) to check against SNI 2973:2011 thresholds",
             "GET  /thresholds":   "List all lab parameters this API knows how to evaluate, with their limits",
+            "GET  /clusters":     "Generate a synthetic batch of samples and cluster the failures by pattern (demo only — see synthetic_data.py)",
+            "GET  /clusters/export": "Same as /clusters but downloads as .xlsx (default) or .csv — visit in a browser to trigger a file download",
             "GET  /health":       "Check if the API is running"
         }
     })
@@ -67,78 +57,49 @@ def index():
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({
-        "status": "ok",
-        "model_loaded": model is not None
-    })
+    return jsonify({"status": "ok", "model_loaded": model is not None})
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    # 1. Validate: make sure an image file was sent
     if "image" not in request.files:
         return jsonify({"error": "No image file found. Send a file with key 'image'"}), 400
 
     file = request.files["image"]
-
     if file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
 
-    # 2. Read image bytes
     image_bytes = file.read()
 
-    # 3. Preprocess
     try:
         processed = preprocess_image(image_bytes)
     except Exception as e:
         return jsonify({"error": f"Failed to process image: {str(e)}"}), 400
 
-    # 4. Run model inference
-    raw_output = model.predict(processed, verbose=0)  # shape: (1, 1)
-    confidence = float(raw_output[0][0])              # scalar between 0 and 1
+    raw_output = model.predict(processed, verbose=0)
+    confidence = float(raw_output[0][0])
 
-    # 5. Determine class
-    # Since output is (1,) with sigmoid:
-    #   confidence >= 0.5  → Class 1
-    #   confidence <  0.5  → Class 0
     if confidence >= 0.5:
         predicted_class = CLASS_NAMES[1]
         class_confidence = confidence
     else:
         predicted_class = CLASS_NAMES[0]
-        class_confidence = 1.0 - confidence  # flip so confidence always = how sure we are
+        class_confidence = 1.0 - confidence
 
-    # 6. Return result
     return jsonify({
         "predicted_class": predicted_class,
-        "confidence": round(class_confidence * 100, 2),  # e.g. 87.43
-        "raw_output": round(confidence, 6)               # raw sigmoid value, useful for debugging
+        "confidence": round(class_confidence * 100, 2),
+        "raw_output": round(confidence, 6)
     })
 
 
 @app.route("/thresholds", methods=["GET"])
 def thresholds():
-    """
-    Lets the frontend build the Predictive Simulator form dynamically
-    instead of hardcoding parameter names/limits in HTML. If you add a new
-    parameter to rules.THRESHOLDS later, the form updates automatically —
-    no frontend code changes needed.
-    """
     return jsonify(THRESHOLDS)
 
 
 @app.route("/predict-lab", methods=["POST"])
 def predict_lab():
-    """
-    Rule-based lab quality check (the "Predictive Simulator" backend).
-
-    Expects JSON body, e.g.:
-        {"moisture": 6.2, "protein": 6.0, "ash": 0.8}
-
-    You don't need to send every parameter — only the ones you want
-    evaluated. This lets a user test "what if just moisture changes?"
-    without filling in every field.
-    """
     data = request.get_json(silent=True)
 
     if data is None:
@@ -147,9 +108,6 @@ def predict_lab():
     if not isinstance(data, dict) or len(data) == 0:
         return jsonify({"error": "Send at least one lab parameter, e.g. {\"moisture\": 6.2}"}), 400
 
-    # Validate every value is actually a number before we do math on it —
-    # otherwise a stray string like "6.2%" would crash the comparison
-    # inside evaluate_sample() instead of returning a clean error.
     for key, value in data.items():
         if not isinstance(value, (int, float)):
             return jsonify({"error": f"'{key}' must be a number, got: {value!r}"}), 400
@@ -164,6 +122,82 @@ def predict_lab():
         "failure_categories": result["failure_categories"],
         "summary": summary_text,
     })
+
+
+def _run_clustering(request_args) -> dict:
+    """Shared by /clusters and /clusters/export so both read the same
+    query params the same way and never drift out of sync."""
+    n = request_args.get("n", default=300, type=int)
+    fail_ratio = request_args.get("fail_ratio", default=0.35, type=float)
+    n_clusters = request_args.get("n_clusters", default=3, type=int)
+
+    n = max(10, min(n, 2000))
+    n_clusters = max(2, min(n_clusters, 6))
+
+    batch = generate_synthetic_batch(n=n, fail_ratio=fail_ratio)
+    result = cluster_failures(batch, n_clusters=n_clusters)
+    result["data_source"] = "synthetic"
+    return result
+
+
+@app.route("/clusters", methods=["GET"])
+def clusters():
+    """
+    Demo-only endpoint: generates a synthetic batch of lab samples (see
+    synthetic_data.py — grounded in our real thresholds, not arbitrary
+    random noise), runs every sample through the existing rule engine,
+    and clusters the FAILED samples into groups using KMeans.
+
+    This exists to satisfy the case brief's "identify product quality
+    failure patterns" / "grouping samples" requirement, since a pure
+    rule engine alone only classifies (pass/fail) and doesn't discover
+    patterns across samples.
+
+    Query params (all optional):
+        n            - how many synthetic samples to generate (default 300)
+        fail_ratio   - roughly what fraction should fail (default 0.35)
+        n_clusters   - how many clusters to form (default 3)
+
+    IMPORTANT: the underlying data is synthetic. Say so in the demo video.
+    """
+    return jsonify(_run_clustering(request.args))
+
+
+@app.route("/clusters/export", methods=["GET"])
+def clusters_export():
+    """
+    Same data as GET /clusters, but returned as an actual downloadable
+    file instead of raw JSON — so it opens directly in Excel/Sheets.
+
+    Query params: same as /clusters, plus:
+        format - "xlsx" (default) or "csv"
+
+    Visiting this URL directly in a browser (not just curl/Postman)
+    triggers a normal file download, since we set Content-Disposition
+    below.
+    """
+    result = _run_clustering(request.args)
+    fmt = request.args.get("format", default="xlsx").lower()
+
+    if not result["clusters"]:
+        return jsonify({"error": result.get("warning", "No clusters to export.")}), 400
+
+    if fmt == "csv":
+        file_bytes = result_to_csv_bytes(result)
+        return send_file(
+            io.BytesIO(file_bytes),
+            mimetype="text/csv",
+            as_attachment=True,
+            download_name="biscuit_clusters.csv",
+        )
+
+    file_bytes = result_to_xlsx_bytes(result)
+    return send_file(
+        io.BytesIO(file_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="biscuit_clusters.xlsx",
+    )
 
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
